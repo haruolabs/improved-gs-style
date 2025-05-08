@@ -53,6 +53,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     style_data = None
     style_json_path = os.path.join(dataset.source_path, "style.json")
+    print('Style JSON path:', style_json_path)
     if os.path.exists(style_json_path):
         print(f"Found style.json at {style_json_path}, loading...")
         try:
@@ -63,7 +64,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             print(f"Error loading style.json: {e}")
 
     print('op args:', opt.iterations)
-    opt.iterations += 30000
+    opt.iterations += 5
 
     # SWD loss
     vgg = VGG19().to(torch.device("cuda"))
@@ -91,7 +92,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         
         gt_image = viewpoint_cam.original_image.cuda()
         image_name = viewpoint_cam.image_name
-        print(f"Processing image: {image_name}")
+        print(f"Processing image: {image_name}") # frame_00004
         
         if style_data and image_name in style_data:
             print(f"Found style data for image {image_name}: {style_data[image_name]}")
