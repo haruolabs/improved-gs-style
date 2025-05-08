@@ -24,6 +24,8 @@ from tqdm import tqdm
 from utils.image_utils import psnr, render_net_image
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+from PIL import Image
+import numpy as np
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -52,6 +54,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_normal_for_log = 0.0
 
     style_data = None
+    images_stylized_path = None
+    masks_path = None
     style_json_path = os.path.join(dataset.source_path, "style.json")
     print('Style JSON path:', style_json_path)
     if os.path.exists(style_json_path):
@@ -60,6 +64,20 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             with open(style_json_path, 'r') as f:
                 style_data = json.load(f)
             print(f"Successfully loaded style data with {len(style_data)} entries")
+            
+            if "images_stylized_path" in style_data:
+                images_stylized_path = style_data["images_stylized_path"]
+                print(f"Found stylized images path: {images_stylized_path}")
+                if not os.path.exists(images_stylized_path):
+                    print(f"Warning: Stylized images path {images_stylized_path} does not exist")
+                    images_stylized_path = None
+            
+            if "masks_path" in style_data:
+                masks_path = style_data["masks_path"]
+                print(f"Found masks path: {masks_path}")
+                if not os.path.exists(masks_path):
+                    print(f"Warning: Masks path {masks_path} does not exist")
+                    masks_path = None
         except Exception as e:
             print(f"Error loading style.json: {e}")
 
@@ -93,6 +111,35 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         gt_image = viewpoint_cam.original_image.cuda()
         image_name = viewpoint_cam.image_name
         print(f"Processing image: {image_name}") # frame_00004
+        
+        stylized_image = None
+        if images_stylized_path:
+            stylized_image_path = os.path.join(images_stylized_path, f"{image_name}.jpg")
+            if os.path.exists(stylized_image_path):
+                try:
+                    pil_image = Image.open(stylized_image_path)
+                    np_image = np.array(pil_image) / 255.0  # Normalize to [0, 1]
+                    np_image = np_image.transpose(2, 0, 1)  # Convert from HWC to CHW format
+                    stylized_image = torch.from_numpy(np_image).float().cuda()
+                    print(f"Loaded stylized image from {stylized_image_path}")
+                except Exception as e:
+                    print(f"Error loading stylized image: {e}")
+        
+        mask_image = None
+        if masks_path:
+            mask_image_path = os.path.join(masks_path, f"{image_name}.jpg")
+            if os.path.exists(mask_image_path):
+                try:
+                    pil_mask = Image.open(mask_image_path)
+                    np_mask = np.array(pil_mask) / 255.0  # Normalize to [0, 1]
+                    if len(np_mask.shape) == 2:  # If grayscale, add channel dimension
+                        np_mask = np_mask[np.newaxis, :, :]
+                    elif len(np_mask.shape) == 3:  # If RGB, convert to CHW format
+                        np_mask = np_mask.transpose(2, 0, 1)
+                    mask_image = torch.from_numpy(np_mask).float().cuda()
+                    print(f"Loaded mask image from {mask_image_path}")
+                except Exception as e:
+                    print(f"Error loading mask image: {e}")
         
         if style_data and image_name in style_data:
             print(f"Found style data for image {image_name}: {style_data[image_name]}")
