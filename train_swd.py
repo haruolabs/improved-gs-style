@@ -11,6 +11,7 @@
 
 import os
 import torch
+import json
 from random import randint
 from utils.loss_utils import l1_loss, ssim
 from utils.swdloss import VGG19
@@ -50,6 +51,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_dist_for_log = 0.0
     ema_normal_for_log = 0.0
 
+    style_data = None
+    style_json_path = os.path.join(dataset.source_path, "style.json")
+    if os.path.exists(style_json_path):
+        print(f"Found style.json at {style_json_path}, loading...")
+        try:
+            with open(style_json_path, 'r') as f:
+                style_data = json.load(f)
+            print(f"Successfully loaded style data with {len(style_data)} entries")
+        except Exception as e:
+            print(f"Error loading style.json: {e}")
+
     print('op args:', opt.iterations)
     opt.iterations += 30000
 
@@ -78,6 +90,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         
         gt_image = viewpoint_cam.original_image.cuda()
+        image_name = viewpoint_cam.image_name
+        print(f"Processing image: {image_name}")
+        
+        if style_data and image_name in style_data:
+            print(f"Found style data for image {image_name}: {style_data[image_name]}")
+        
         Ll1 = l1_loss(image, gt_image) # torch.Size([3, 1036, 1600])
         #loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         loss = vgg.slicing_loss(image.unsqueeze(0), gt_image.unsqueeze(0))
