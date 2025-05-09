@@ -32,7 +32,7 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, style_json_path=None):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -56,7 +56,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     style_data = None
     images_stylized_path = None
     masks_path = None
-    style_json_path = os.path.join(dataset.source_path, "style.json")
+    
+    if style_json_path is None:
+        style_json_path = os.path.join(dataset.source_path, "style.json")
+    
     print('Style JSON path:', style_json_path)
     if os.path.exists(style_json_path):
         print(f"Found style.json at {style_json_path}, loading...")
@@ -338,6 +341,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
+    parser.add_argument("--style_json", type=str, default=None, help="Path to style.json file")
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     
@@ -349,7 +353,7 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint)
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.style_json)
 
     # All done
     print("\nTraining complete.")
