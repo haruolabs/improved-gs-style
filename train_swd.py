@@ -79,10 +79,25 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             
             if "masks_path" in style_data:
                 masks_path = style_data["masks_path"]
-                print(f"Found masks path: {masks_path}")
-                if not os.path.exists(masks_path):
-                    print(f"Warning: Masks path {masks_path} does not exist")
+                if isinstance(masks_path, str):
+                    masks_path = [masks_path]
+                    print(f"Found single masks path: {masks_path[0]}")
+                elif isinstance(masks_path, list):
+                    print(f"Found multiple masks paths: {len(masks_path)} paths")
+                
+                valid_paths = []
+                for path in masks_path:
+                    if os.path.exists(path):
+                        valid_paths.append(path)
+                    else:
+                        print(f"Warning: Masks path {path} does not exist")
+                
+                if not valid_paths:
                     masks_path = None
+                    print("No valid mask paths found")
+                else:
+                    masks_path = valid_paths
+                    print(f"Using {len(masks_path)} valid mask paths")
         except Exception as e:
             print(f"Error loading style.json: {e}")
 
@@ -131,21 +146,28 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 except Exception as e:
                     print(f"Error loading stylized image: {e}")
         
-        mask_image = None
+        mask_images = []
         if masks_path:
-            mask_image_path = os.path.join(masks_path, f"{image_name}.jpg")
-            if os.path.exists(mask_image_path):
-                try:
-                    pil_mask = Image.open(mask_image_path)
-                    np_mask = np.array(pil_mask) / 255.0  # Normalize to [0, 1]
-                    if len(np_mask.shape) == 2:  # If grayscale, add channel dimension
-                        np_mask = np_mask[np.newaxis, :, :]
-                    elif len(np_mask.shape) == 3:  # If RGB, convert to CHW format
-                        np_mask = np_mask.transpose(2, 0, 1)
-                    mask_image = torch.from_numpy(np_mask).float().cuda()
-                    #print(f"Loaded mask image from {mask_image_path}")
-                except Exception as e:
-                    print(f"Error loading mask image: {e}")
+            for path in masks_path:
+                mask_image_path = os.path.join(path, f"{image_name}.jpg")
+                if os.path.exists(mask_image_path):
+                    try:
+                        pil_mask = Image.open(mask_image_path)
+                        np_mask = np.array(pil_mask) / 255.0  # Normalize to [0, 1]
+                        if len(np_mask.shape) == 2:  # If grayscale, add channel dimension
+                            np_mask = np_mask[np.newaxis, :, :]
+                        elif len(np_mask.shape) == 3:  # If RGB, convert to CHW format
+                            np_mask = np_mask.transpose(2, 0, 1)
+                        mask_image = torch.from_numpy(np_mask).float().cuda()
+                        mask_images.append(mask_image)
+                        #print(f"Loaded mask image from {mask_image_path}")
+                    except Exception as e:
+                        print(f"Error loading mask image from {mask_image_path}: {e}")
+            
+            if not mask_images:
+                print(f"No mask images found for {image_name} in any of the provided paths")
+            else:
+                print(f"Loaded {len(mask_images)} mask images for {image_name}")
         
         if style_data and image_name in style_data:
             print(f"Found style data for image {image_name}: {style_data[image_name]}")
@@ -154,10 +176,25 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         #loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
 
         #loss = vgg.slicing_loss(image.unsqueeze(0), gt_image.unsqueeze(0)) # Vanilla SWD loss w/o masks
-
-        ref_image = stylized_image*mask_image + gt_image*(1-mask_image) # Region-based: only the masked area will be style-transferred
-        loss = vgg.ebsw_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=mask_image.unsqueeze(0)) # [b, c, h, w]
-        #loss = vgg.region_based_swd_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=mask_image.unsqueeze(0)) # [b, c, h, w]
+        #ref_image = stylized_image*mask_image + gt_image*(1-mask_image) # Region-based: only the masked area will be style-transferred
+        
+        loss = 0
+        if mask_images:
+            combined_mask = None
+            for mask in mask_images:
+                if combined_mask is None:
+                    combined_mask = mask.clone()
+                else:
+                    combined_mask = torch.maximum(combined_mask, mask)
+            
+            if stylized_image is not None and combined_mask is not None:
+                ref_image = stylized_image * combined_mask + gt_image * (1 - combined_mask)  # Region-based: only the masked area will be style-transferred
+                loss = vgg.ebsw_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=combined_mask.unsqueeze(0))  # [b, c, h, w]
+                #loss = vgg.region_based_swd_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=mask_image.unsqueeze(0)) # [b, c, h, w]
+            else:
+                loss = vgg.slicing_loss(image.unsqueeze(0), gt_image.unsqueeze(0))
+        else:
+            loss = vgg.slicing_loss(image.unsqueeze(0), gt_image.unsqueeze(0))
         #loss += 0.1*self.vgg.content_loss(out_patches, second_patches) # ToDo
         
         # regularization
