@@ -157,6 +157,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         ref_image = stylized_image*mask_image + gt_image*(1-mask_image) # Region-based: only the masked area will be style-transferred
         loss = vgg.ebsw_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=mask_image.unsqueeze(0)) # [b, c, h, w]
+        #loss = vgg.region_based_swd_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=mask_image.unsqueeze(0)) # [b, c, h, w]
         #loss += 0.1*self.vgg.content_loss(out_patches, second_patches) # ToDo
         
         # regularization

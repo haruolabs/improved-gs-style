@@ -207,6 +207,107 @@ class VGG19(torch.nn.Module):
                 loss += SW.mean() #torch.mean( (sorted_activations_example-sorted_activations_generated)**2 ) 
                 
         return loss #, loss_content
+    
+    def region_based_swd_loss(self, image_generated, image_example, l1=False, mask=None, sample_pixels=False): # mask can be a single mask [b, 1, H, W] or a list of masks
+        """
+        Region-based Sliced Wasserstein Distance loss that can handle multiple masks.
+        
+        Args:
+            image_generated: Generated image tensor [b, c, h, w]
+            image_example: Example/target image tensor [b, c, h, w]
+            l1: Whether to use L1 distance instead of L2
+            mask: A single mask tensor [b, 1, h, w] or a list of mask tensors
+            sample_pixels: Whether to sample pixels for efficiency
+            
+        Returns:
+            loss: The computed loss value
+        """
+        # 0,1 / 2,3 / 4,5,6,7 / 8,9,10,11
+        if mask is not None:
+            if isinstance(mask, list):
+                mask_tensor = torch.zeros_like(mask[0]).float()
+            else:
+                mask_tensor = mask.float()
+            if mask_tensor.dim() == 3:
+                mask_tensor = mask_tensor.unsqueeze(dim=0)
+
+        # generate VGG19 activations
+        list_activations_generated = self.forward(image_generated)
+        list_activations_example   = self.forward(image_example)
+
+        # iterate over layers
+        loss = 0
+
+        for l in range(len(list_activations_example)):
+            # get dimensions
+            b = list_activations_example[l].shape[0]
+            dim = list_activations_example[l].shape[1]
+            n = list_activations_example[l].shape[2]*list_activations_example[l].shape[3]
+            n_target = list_activations_generated[l].shape[2]*list_activations_generated[l].shape[3]            
+
+            if mask is not None:
+                if l in [2, 4, 8]: # downscale mask
+                    mask_tensor = torch.nn.functional.interpolate(mask_tensor, scale_factor=(0.5, 0.5), mode='nearest') # 'nearest-exact'
+                mask_ = mask_tensor.view(b, 1, -1) # [b, 1, pixels]
+
+            # linearize layer activations and duplicate example activations according to scaling factor
+            activations_example = list_activations_example[l].view(b, dim, n).repeat(1, 1, SCALING_FACTOR*SCALING_FACTOR) #
+            activations_generated = list_activations_generated[l].view(b, dim, n_target*SCALING_FACTOR*SCALING_FACTOR)
+
+            n_sample = min(n, n_target)
+            if n != n_target:
+                perm1 = torch.randperm(n_sample)
+                if n > n_target:
+                    activations_example = activations_example[:,:,perm1[:n_sample]]
+                else:
+                    activations_generated = activations_generated[:,:,perm1[:n_sample]]
+                if mask is not None:
+                    mask_ = mask_[:,:,perm1[:n_sample]]
+
+            # If sample pixels
+            if sample_pixels:
+                r = 1
+                n = activations_example.shape[2]
+                perm = torch.randperm(n)
+                activations_example = activations_example[:,:,perm[:(n_sample//r)]]
+                activations_generated = activations_generated[:,:,perm[:(n_sample//r)]]
+                if mask_ is not None:
+                    mask_ = mask_[:,:,perm[:n//r]]
+
+            # sample random directions
+            Ndirection = dim
+            directions = torch.randn(Ndirection, dim).to(torch.device("cuda:0")) # [Ndir, dim]
+            directions = directions / torch.sqrt(torch.sum(directions**2, dim=1, keepdim=True))
+
+            if mask is not None: # and l < 2:
+                # activation: [b, dim, pixels], directions: [ndir, dim+1]
+                max_val = torch.max( torch.cat( (activations_example, activations_generated), dim=0 ) ).item()
+                for i, m in enumerate(mask):
+                    directions = torch.cat((directions, torch.ones(Ndirection, 1).to(torch.device("cuda:0"))), dim=1) # [ndir, dim+1]
+                    mask_ += m*max_val*(i+1)
+                activations_example = torch.cat((activations_example, mask_), dim=1)
+                activations_generated = torch.cat((activations_generated, mask_), dim=1)
+
+            # project activations over random directions
+            projected_activations_example = torch.einsum('bdn,md->bmn', activations_example, directions)
+            projected_activations_generated = torch.einsum('bdn,md->bmn', activations_generated, directions) # [b, num_of_dirs, num_of_pixels]
+
+            # sort the projections
+            sorted_activations_example = torch.sort(projected_activations_example, dim=2)[0]
+            sorted_activations_generated = torch.sort(projected_activations_generated, dim=2)[0]
+
+            SW = torch.mean((sorted_activations_example-sorted_activations_generated)**2, dim=2) # L2 distance [b, num_of_dirs]
+
+            # L2 over sorted lists
+            if l1:
+                loss += torch.mean( torch.abs(sorted_activations_example-sorted_activations_generated) ) 
+            elif False:
+                weights = torch.nn.functional.softmax(SW, dim=1) # [b, num_of_dirs]
+                loss += torch.sum(weights*SW, dim=1).mean()
+            else:
+                loss += SW.mean() #torch.mean( (sorted_activations_example-sorted_activations_generated)**2 ) 
+
+        return loss
 
     def content_loss(self, image_generated, image_content, l1=False, mask=None): # mask [H, W]
             # https://pytorch.org/tutorials/advanced/neural_style_tutorial.html
