@@ -32,7 +32,7 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, extra_iterations=5000, style_json_path=None):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, extra_iterations=5000, style_json_name=None):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -57,8 +57,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     images_stylized_path = None
     masks_path = None
     
-    if style_json_path is None:
+    if style_json_name is None:
         style_json_path = os.path.join(dataset.source_path, "style.json")
+    else:
+        style_json_path = os.path.join(dataset.source_path, style_json_name)
     
     print('Style JSON path:', style_json_path)
     if os.path.exists(style_json_path):
@@ -347,7 +349,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
-    parser.add_argument("--style_json", type=str, default=None, help="Path to style.json file")
+    parser.add_argument("--style_json", type=str, default=None, help="Name of stylization JSON config file")
     parser.add_argument("--extra_iterations", type=int, default = 5000)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
