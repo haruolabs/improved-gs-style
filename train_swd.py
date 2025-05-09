@@ -32,7 +32,7 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, extra_iterations=5000):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -82,7 +82,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             print(f"Error loading style.json: {e}")
 
     print('op args:', opt.iterations)
-    opt.iterations += 5
+    if style_data is not None:
+        opt.iterations += extra_iterations
 
     # SWD loss
     vgg = VGG19().to(torch.device("cuda"))
@@ -110,7 +111,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         
         gt_image = viewpoint_cam.original_image.cuda()
         image_name = viewpoint_cam.image_name
-        print(f"Processing image: {image_name}") # frame_00004
+        #print(f"Processing image: {image_name}") # frame_00004
         
         stylized_image = None
         if images_stylized_path:
@@ -121,7 +122,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     np_image = np.array(pil_image) / 255.0  # Normalize to [0, 1]
                     np_image = np_image.transpose(2, 0, 1)  # Convert from HWC to CHW format
                     stylized_image = torch.from_numpy(np_image).float().cuda()
-                    print(f"Loaded stylized image from {stylized_image_path}")
+                    #print(f"Loaded stylized image from {stylized_image_path}")
                 except Exception as e:
                     print(f"Error loading stylized image: {e}")
         
@@ -137,7 +138,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     elif len(np_mask.shape) == 3:  # If RGB, convert to CHW format
                         np_mask = np_mask.transpose(2, 0, 1)
                     mask_image = torch.from_numpy(np_mask).float().cuda()
-                    print(f"Loaded mask image from {mask_image_path}")
+                    #print(f"Loaded mask image from {mask_image_path}")
                 except Exception as e:
                     print(f"Error loading mask image: {e}")
         
@@ -146,7 +147,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         
         Ll1 = l1_loss(image, gt_image) # torch.Size([3, 1036, 1600])
         #loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        loss = vgg.slicing_loss(image.unsqueeze(0), gt_image.unsqueeze(0))
+
+        #loss = vgg.slicing_loss(image.unsqueeze(0), gt_image.unsqueeze(0)) # Vanilla SWD loss w/o masks
+
+        ref_image = stylized_image*mask_image + gt_image*(1-mask_image) # Region-based: only the masked area will be style-transferred
+        loss = vgg.ebsw_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=mask_image.unsqueeze(0)) # [b, c, h, w]
+        #loss += 0.1*self.vgg.content_loss(out_patches, second_patches) # ToDo
         
         # regularization
         lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
@@ -338,6 +344,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
+    parser.add_argument("--extra_iterations", type=int, default = 5000)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     
@@ -349,7 +356,7 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint)
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.extra_iterations)
 
     # All done
     print("\nTraining complete.")
