@@ -308,6 +308,7 @@ def parse_camera_path_json(json_path, reference_camera=None):
   zfar = 100.0
   
   from scene.cameras import MiniCam
+  from utils.graphics_utils import getProjectionMatrix
   
   cameras = []
   for pose in camera_poses:
@@ -319,28 +320,19 @@ def parse_camera_path_json(json_path, reference_camera=None):
     else:
       raise ValueError("Camera pose does not contain camera_to_world or matrix.")
     
+    c2w = c2w @ np.diag([1, -1, -1, 1])
+    
     fov = pose.get('fov', default_fov)
     aspect = pose.get('aspect', render_width / render_height)
-    
-    # world_view_transform is the inverse transpose of camera_to_world
-    world_view_transform = torch.from_numpy(np.linalg.inv(c2w).T).float().cuda()
-    
-    # Calculate projection matrix based on fov and aspect
-    fov_rad = np.deg2rad(fov)
-    focal_length = 1.0 / np.tan(fov_rad / 2)
     
     # Calculate FoVx and FoVy from fov and aspect
     fovy = fov
     fovx = 2 * np.rad2deg(np.arctan(np.tan(np.deg2rad(fovy) / 2) * aspect))
     
-    projection = np.zeros((4, 4))
-    projection[0, 0] = focal_length / aspect
-    projection[1, 1] = focal_length
-    projection[2, 2] = -(zfar + znear) / (zfar - znear)
-    projection[2, 3] = -2 * zfar * znear / (zfar - znear)
-    projection[3, 2] = -1.0
+    # world_view_transform is the inverse transpose of camera_to_world
+    world_view_transform = torch.from_numpy(np.linalg.inv(c2w).T).float().cuda()
     
-    projection_matrix = torch.from_numpy(projection).float().cuda()
+    projection_matrix = getProjectionMatrix(znear=znear, zfar=zfar, fovX=np.deg2rad(fovx), fovY=np.deg2rad(fovy)).transpose(0,1).cuda()
     
     # Calculate full projection transform
     full_proj_transform = (world_view_transform.unsqueeze(0).bmm(projection_matrix.unsqueeze(0))).squeeze(0)
@@ -355,6 +347,9 @@ def parse_camera_path_json(json_path, reference_camera=None):
         world_view_transform=world_view_transform,
         full_proj_transform=full_proj_transform
     )
+    
+    view_inv = torch.inverse(world_view_transform)
+    cam.camera_center = view_inv[3, :3]
     
     cameras.append(cam)
   
