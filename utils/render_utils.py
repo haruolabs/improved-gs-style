@@ -320,7 +320,8 @@ def parse_camera_path_json(json_path, reference_camera=None):
     else:
       raise ValueError("Camera pose does not contain camera_to_world or matrix.")
     
-    c2w = c2w @ np.diag([1, -1, -1, 1])
+    c2w[:3, :3] = c2w[:3, :3] @ np.diag([1, -1, -1])
+    c2w[:3, 3] = c2w[:3, 3] * np.array([1, -1, -1])
     
     fov = pose.get('fov', default_fov)
     aspect = pose.get('aspect', render_width / render_height)
