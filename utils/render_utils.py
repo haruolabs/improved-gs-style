@@ -320,18 +320,25 @@ def parse_camera_path_json(json_path, reference_camera=None):
     else:
       raise ValueError("Camera pose does not contain camera_to_world or matrix.")
     
+    rotation = c2w[:3, :3]
+    translation = c2w[:3, 3]
     
-    swap_matrix = np.array([
-        [0, 0, 1, 0],
-        [0, 1, 0, 0],
-        [1, 0, 0, 0],
-        [0, 0, 0, 1]
+    transform = np.array([
+        [0, 0, 1],  # X axis becomes Z
+        [1, 0, 0],  # Y axis becomes X
+        [0, 1, 0]   # Z axis becomes Y
     ])
     
-    c2w = c2w @ swap_matrix
-    c2w[:3, 1:3] *= -1
+    rotation_transformed = transform @ rotation @ transform.T
+    translation_transformed = transform @ translation
     
-    w2c = np.linalg.inv(c2w)
+    c2w_transformed = np.eye(4)
+    c2w_transformed[:3, :3] = rotation_transformed
+    c2w_transformed[:3, 3] = translation_transformed
+    
+    c2w_transformed[:3, 1:3] *= -1
+    
+    w2c = np.linalg.inv(c2w_transformed)
     R = np.transpose(w2c[:3, :3])  # R is stored transposed due to 'glm' in CUDA code
     T = w2c[:3, 3]
     
