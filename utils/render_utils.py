@@ -320,6 +320,15 @@ def parse_camera_path_json(json_path, reference_camera=None):
     else:
       raise ValueError("Camera pose does not contain camera_to_world or matrix.")
     
+    
+    swap_matrix = np.array([
+        [0, 0, 1, 0],
+        [0, 1, 0, 0],
+        [1, 0, 0, 0],
+        [0, 0, 0, 1]
+    ])
+    
+    c2w = c2w @ swap_matrix
     c2w[:3, 1:3] *= -1
     
     w2c = np.linalg.inv(c2w)
