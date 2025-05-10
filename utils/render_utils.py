@@ -308,10 +308,10 @@ def parse_camera_path_json(json_path, reference_camera=None):
   zfar = 100.0
   
   from scene.cameras import MiniCam
-  from utils.graphics_utils import getProjectionMatrix
+  from utils.graphics_utils import getWorld2View2, getProjectionMatrix
   
   cameras = []
-  for pose in camera_poses:
+  for idx, pose in enumerate(camera_poses):
     # Get camera_to_world matrix, fov, and aspect
     if 'camera_to_world' in pose:
       c2w = np.array(pose['camera_to_world']).reshape(4, 4)
@@ -320,7 +320,11 @@ def parse_camera_path_json(json_path, reference_camera=None):
     else:
       raise ValueError("Camera pose does not contain camera_to_world or matrix.")
     
-    c2w = c2w @ np.diag([1, -1, -1, 1])
+    c2w[:3, 1:3] *= -1
+    
+    w2c = np.linalg.inv(c2w)
+    R = np.transpose(w2c[:3, :3])  # R is stored transposed due to 'glm' in CUDA code
+    T = w2c[:3, 3]
     
     fov = pose.get('fov', default_fov)
     aspect = pose.get('aspect', render_width / render_height)
@@ -329,8 +333,7 @@ def parse_camera_path_json(json_path, reference_camera=None):
     fovy = fov
     fovx = 2 * np.rad2deg(np.arctan(np.tan(np.deg2rad(fovy) / 2) * aspect))
     
-    # world_view_transform is the inverse transpose of camera_to_world
-    world_view_transform = torch.from_numpy(np.linalg.inv(c2w).T).float().cuda()
+    world_view_transform = torch.tensor(getWorld2View2(R, T)).transpose(0, 1).cuda()
     
     projection_matrix = getProjectionMatrix(znear=znear, zfar=zfar, fovX=np.deg2rad(fovx), fovY=np.deg2rad(fovy)).transpose(0,1).cuda()
     
