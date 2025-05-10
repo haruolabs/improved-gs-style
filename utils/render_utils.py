@@ -16,6 +16,7 @@ import numpy as np
 import os
 import enum
 import types
+import json
 from typing import List, Mapping, Optional, Text, Tuple, Union
 import copy
 from PIL import Image
@@ -279,3 +280,82 @@ def save_img_f32(depthmap, pth):
   """Save an image (probably a depthmap) to disk as a float32 TIFF."""
   with open(pth, 'wb') as f:
     Image.fromarray(np.nan_to_num(depthmap).astype(np.float32)).save(f, 'TIFF')
+
+
+def parse_camera_path_json(json_path, reference_camera=None):
+  """Parse a Nerfstudio camera path JSON file and convert it to camera objects.
+  
+  Args:
+    json_path: Path to the Nerfstudio camera path JSON file.
+    reference_camera: A reference camera object to copy properties from.
+    
+  Returns:
+    A list of camera objects compatible with the format returned by scene.getTrainCameras().
+  """
+  with open(json_path, 'r') as f:
+    camera_path_data = json.load(f)
+  
+  camera_poses = camera_path_data.get('camera_path', camera_path_data.get('keyframes', []))
+  
+  if not camera_poses:
+    raise ValueError("No camera poses found in the JSON file.")
+  
+  render_height = camera_path_data.get('render_height', 1080.0)
+  render_width = camera_path_data.get('render_width', 1920.0)
+  
+  default_fov = camera_path_data.get('default_fov', 50.0)
+  znear = 0.01
+  zfar = 100.0
+  
+  from scene.cameras import MiniCam
+  
+  cameras = []
+  for pose in camera_poses:
+    # Get camera_to_world matrix, fov, and aspect
+    if 'camera_to_world' in pose:
+      c2w = np.array(pose['camera_to_world']).reshape(4, 4)
+    elif 'matrix' in pose:
+      c2w = np.array(pose['matrix']).reshape(4, 4)
+    else:
+      raise ValueError("Camera pose does not contain camera_to_world or matrix.")
+    
+    fov = pose.get('fov', default_fov)
+    aspect = pose.get('aspect', render_width / render_height)
+    
+    # world_view_transform is the inverse transpose of camera_to_world
+    world_view_transform = torch.from_numpy(np.linalg.inv(c2w).T).float().cuda()
+    
+    # Calculate projection matrix based on fov and aspect
+    fov_rad = np.deg2rad(fov)
+    focal_length = 1.0 / np.tan(fov_rad / 2)
+    
+    # Calculate FoVx and FoVy from fov and aspect
+    fovy = fov
+    fovx = 2 * np.rad2deg(np.arctan(np.tan(np.deg2rad(fovy) / 2) * aspect))
+    
+    projection = np.zeros((4, 4))
+    projection[0, 0] = focal_length / aspect
+    projection[1, 1] = focal_length
+    projection[2, 2] = -(zfar + znear) / (zfar - znear)
+    projection[2, 3] = -2 * zfar * znear / (zfar - znear)
+    projection[3, 2] = -1.0
+    
+    projection_matrix = torch.from_numpy(projection).float().cuda()
+    
+    # Calculate full projection transform
+    full_proj_transform = (world_view_transform.unsqueeze(0).bmm(projection_matrix.unsqueeze(0))).squeeze(0)
+    
+    cam = MiniCam(
+        width=int(render_width),
+        height=int(render_height),
+        fovy=fovy,
+        fovx=fovx,
+        znear=znear,
+        zfar=zfar,
+        world_view_transform=world_view_transform,
+        full_proj_transform=full_proj_transform
+    )
+    
+    cameras.append(cam)
+  
+  return cameras
