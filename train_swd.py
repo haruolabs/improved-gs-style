@@ -60,7 +60,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     if style_json_name is None:
         style_json_path = os.path.join(dataset.source_path, "style.json")
     else:
-        style_json_path = os.path.join(dataset.source_path, style_json_name)
+        style_json_path = style_json_name #os.path.join(dataset.source_path, style_json_name)
     
     print('Style JSON path:', style_json_path)
     if os.path.exists(style_json_path):
@@ -166,8 +166,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             
             if not mask_images:
                 print(f"No mask images found for {image_name} in any of the provided paths")
-            else:
-                print(f"Loaded {len(mask_images)} mask images for {image_name}")
+            #else:
+            #    print(f"Loaded {len(mask_images)} mask images for {image_name}")
         
         if style_data and image_name in style_data:
             print(f"Found style data for image {image_name}: {style_data[image_name]}")
@@ -188,13 +188,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     combined_mask = torch.maximum(combined_mask, mask)
             
             if stylized_image is not None and combined_mask is not None:
-                ref_image = stylized_image * combined_mask + gt_image * (1 - combined_mask)  # Region-based: only the masked area will be style-transferred
+                ref_image = stylized_image * combined_mask + gt_image * (1 - combined_mask)  # Region-based: only the masked area will be style-transferred, outer region will be preserved
+                #ref_image = stylized_image
                 loss = vgg.ebsw_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=combined_mask.unsqueeze(0))  # [b, c, h, w]
                 #loss = vgg.region_based_swd_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=mask_image.unsqueeze(0)) # [b, c, h, w]
             else:
-                loss = vgg.slicing_loss(image.unsqueeze(0), gt_image.unsqueeze(0))
+                loss = vgg.slicing_loss(image.unsqueeze(0), stylized_image.unsqueeze(0))
         else:
-            loss = vgg.slicing_loss(image.unsqueeze(0), gt_image.unsqueeze(0))
+            loss = vgg.slicing_loss(image.unsqueeze(0), stylized_image.unsqueeze(0))
         #loss += 0.1*self.vgg.content_loss(out_patches, second_patches) # ToDo
         
         # regularization

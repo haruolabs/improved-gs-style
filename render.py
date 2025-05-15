@@ -21,7 +21,7 @@ from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import GaussianModel
 from utils.mesh_utils import GaussianExtractor, to_cam_open3d, post_process_mesh
-from utils.render_utils import generate_path, create_videos
+from utils.render_utils import generate_path, create_videos, parse_camera_path_json
 
 import open3d as o3d
 
@@ -36,6 +36,7 @@ if __name__ == "__main__":
     parser.add_argument("--skip_mesh", action="store_true")
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--render_path", action="store_true")
+    parser.add_argument("--camera_path_json", default='', type=str, help='Path to Nerfstudio camera path JSON file')
     parser.add_argument("--voxel_size", default=-1.0, type=float, help='Mesh: voxel size for TSDF')
     parser.add_argument("--depth_trunc", default=-1.0, type=float, help='Mesh: Max depth range for TSDF')
     parser.add_argument("--sdf_trunc", default=-1.0, type=float, help='Mesh: truncation value for TSDF')
@@ -75,7 +76,15 @@ if __name__ == "__main__":
         traj_dir = os.path.join(args.model_path, 'traj', "ours_{}".format(scene.loaded_iter))
         os.makedirs(traj_dir, exist_ok=True)
         n_fames = 240
-        cam_traj = generate_path(scene.getTrainCameras(), n_frames=n_fames)
+        
+        if args.camera_path_json != '': # None won't get parsed by get_combined_args()...
+            print(f"Using camera path from JSON file: {args.camera_path_json}")
+            reference_camera = scene.getTrainCameras()[0] if len(scene.getTrainCameras()) > 0 else None
+            cam_traj = parse_camera_path_json(args.camera_path_json, reference_camera)
+            n_fames = len(cam_traj)
+        else:
+            cam_traj = generate_path(scene.getTrainCameras(), n_frames=n_fames)
+        
         gaussExtractor.reconstruction(cam_traj)
         gaussExtractor.export_image(traj_dir)
         create_videos(base_dir=traj_dir,
