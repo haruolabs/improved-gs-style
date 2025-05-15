@@ -36,7 +36,7 @@ if __name__ == "__main__":
     parser.add_argument("--skip_mesh", action="store_true")
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--render_path", action="store_true")
-    parser.add_argument("--camera-path-json", type=str, help='Path to Nerfstudio camera path JSON file')
+    parser.add_argument("--camera_path_json", default='', type=str, help='Path to Nerfstudio camera path JSON file')
     parser.add_argument("--voxel_size", default=-1.0, type=float, help='Mesh: voxel size for TSDF')
     parser.add_argument("--depth_trunc", default=-1.0, type=float, help='Mesh: Max depth range for TSDF')
     parser.add_argument("--sdf_trunc", default=-1.0, type=float, help='Mesh: truncation value for TSDF')
@@ -77,7 +77,7 @@ if __name__ == "__main__":
         os.makedirs(traj_dir, exist_ok=True)
         n_fames = 240
         
-        if args.camera_path_json:
+        if args.camera_path_json != '': # None won't get parsed by get_combined_args()...
             print(f"Using camera path from JSON file: {args.camera_path_json}")
             reference_camera = scene.getTrainCameras()[0] if len(scene.getTrainCameras()) > 0 else None
             cam_traj = parse_camera_path_json(args.camera_path_json, reference_camera)

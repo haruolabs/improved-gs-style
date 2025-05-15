@@ -322,7 +322,14 @@ def parse_camera_path_json(json_path, reference_camera=None):
     
     rotation = c2w[:3, :3]
     translation = c2w[:3, 3]
-    
+    '''
+    transform = np.array([
+        [0, 0, 1],  # X axis becomes Z
+        [1, 0, 0],  # Y axis becomes X
+        [0, 1, 0]   # Z axis becomes Y
+    ])
+    '''
+    # y-z (1,3,2) NG x-y (2,1,3) NG x-z (3,2,1) NG (2,3,1) NG (3,1,2)
     transform = np.array([
         [0, 0, 1],  # X axis becomes Z
         [1, 0, 0],  # Y axis becomes X
