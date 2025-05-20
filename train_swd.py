@@ -174,9 +174,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         
         Ll1 = l1_loss(image, gt_image) # torch.Size([3, 1036, 1600])
         #loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        # Content loss
+        content_loss = vgg.content_loss(image.unsqueeze(0), stylized_image.unsqueeze(0))
 
         #loss = vgg.slicing_loss(image.unsqueeze(0), gt_image.unsqueeze(0)) # Vanilla SWD loss w/o masks
         #ref_image = stylized_image*mask_image + gt_image*(1-mask_image) # Region-based: only the masked area will be style-transferred
+        sample_patch = False
+        if sample_patch:
+            import random
+            _, H, W = image.shape
+            crop_h = 256
+            crop_w = 256
+            top = random.randint(0, H - crop_h)
+            left = random.randint(0, W - crop_w)
+            image = image[:, top:top+crop_h, left:left+crop_w]
+            gt_image = gt_image[:, top:top+crop_h, left:left+crop_w]
+            stylized_image = stylized_image[:, top:top+crop_h, left:left+crop_w]
+            mask_images = [m[:, top:top+crop_h, left:left+crop_w] for m in mask_images]
         
         loss = 0
         if mask_images:
@@ -188,15 +202,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     combined_mask = torch.maximum(combined_mask, mask)
             
             if stylized_image is not None and combined_mask is not None:
-                ref_image = stylized_image * combined_mask + gt_image * (1 - combined_mask)  # Region-based: only the masked area will be style-transferred, outer region will be preserved
-                #ref_image = stylized_image
-                loss = vgg.ebsw_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=combined_mask.unsqueeze(0))  # [b, c, h, w]
-                #loss = vgg.region_based_swd_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=mask_image.unsqueeze(0)) # [b, c, h, w]
+                #ref_image = stylized_image * combined_mask + gt_image * (1 - combined_mask)  # Region-based: only the masked area will be style-transferred, outer region will be preserved
+                ref_image = stylized_image
+                #loss = vgg.ebsw_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=combined_mask.unsqueeze(0))  # [b, c, h, w]
+                loss = vgg.region_based_swd_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=mask_images) # [b, c, h, w]
             else:
                 loss = vgg.slicing_loss(image.unsqueeze(0), stylized_image.unsqueeze(0))
         else:
             loss = vgg.slicing_loss(image.unsqueeze(0), stylized_image.unsqueeze(0))
-        #loss += 0.1*self.vgg.content_loss(out_patches, second_patches) # ToDo
         
         # regularization
         lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
@@ -210,7 +223,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         dist_loss = lambda_dist * (rend_dist).mean()
 
         # loss
-        total_loss = loss + dist_loss + normal_loss
+        total_loss = loss + dist_loss + normal_loss + 0.1*content_loss
         
         total_loss.backward()
 
