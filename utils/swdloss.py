@@ -226,6 +226,7 @@ class VGG19(torch.nn.Module):
         if mask is not None:
             if isinstance(mask, list):
                 mask_tensor = torch.zeros_like(mask[0]).float()
+                mask = [m.unsqueeze(0) for m in mask]
             else:
                 mask_tensor = mask.float()
             if mask_tensor.dim() == 3:
@@ -248,6 +249,8 @@ class VGG19(torch.nn.Module):
             if mask is not None:
                 if l in [2, 4, 8]: # downscale mask
                     mask_tensor = torch.nn.functional.interpolate(mask_tensor, scale_factor=(0.5, 0.5), mode='nearest') # 'nearest-exact'
+                    mask = [torch.nn.functional.interpolate(m, scale_factor=(0.5, 0.5), mode='nearest') for m in mask]
+                    #mask[0] = torch.nn.functional.interpolate(mask[0].unsqueeze(0), scale_factor=(0.5, 0.5), mode='nearest') # 'nearest-exact'
                 mask_ = mask_tensor.view(b, 1, -1) # [b, 1, pixels]
 
             # linearize layer activations and duplicate example activations according to scaling factor
@@ -282,13 +285,17 @@ class VGG19(torch.nn.Module):
             if mask is not None: # and l < 2:
                 # activation: [b, dim, pixels], directions: [ndir, dim+1]
                 max_val = torch.max( torch.cat( (activations_example, activations_generated), dim=0 ) ).item()
+                directions = torch.cat((directions, torch.ones(Ndirection, 1).to(torch.device("cuda:0"))), dim=1) # [ndir, dim+1]
                 for i, m in enumerate(mask):
-                    directions = torch.cat((directions, torch.ones(Ndirection, 1).to(torch.device("cuda:0"))), dim=1) # [ndir, dim+1]
+                    m = m.view(b, 1, -1)
+                    #print('DEBUG l=',l, mask_.shape, m.shape) #DEBUG torch.Size([1, 1, 733572]) torch.Size([1, 738, 994]) 
+                    # DEBUG torch.Size([1, 1, 183393]) torch.Size([1, 1, 733572]) [17/05 02:58:18]
                     mask_ += m*max_val*(i+1)
                 activations_example = torch.cat((activations_example, mask_), dim=1)
                 activations_generated = torch.cat((activations_generated, mask_), dim=1)
 
             # project activations over random directions
+            #print('DEBUG2', activations_example.shape, directions.shape) # DEBUG2 torch.Size([1, 65, 733572]) torch.Size([64, 68])
             projected_activations_example = torch.einsum('bdn,md->bmn', activations_example, directions)
             projected_activations_generated = torch.einsum('bdn,md->bmn', activations_generated, directions) # [b, num_of_dirs, num_of_pixels]
 
