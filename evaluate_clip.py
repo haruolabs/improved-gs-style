@@ -1,7 +1,7 @@
 #
 #
 #
-#
+# CLIP-based metrics for 3D editing
 
 import os
 import glob
