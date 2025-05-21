@@ -136,6 +136,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         stylized_image = None
         if images_stylized_path:
             stylized_image_path = os.path.join(images_stylized_path, f"{image_name}.jpg")
+            if not os.path.exists(stylized_image_path):
+                stylized_image_path = os.path.join(images_stylized_path, f"{image_name}.JPG")
+            
             if os.path.exists(stylized_image_path):
                 try:
                     pil_image = Image.open(stylized_image_path)
