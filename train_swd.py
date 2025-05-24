@@ -18,7 +18,7 @@ from utils.swdloss import VGG19
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
-from utils.general_utils import safe_state
+from utils.general_utils import safe_state, PILtoTorch
 import uuid
 from tqdm import tqdm
 from utils.image_utils import psnr, render_net_image
@@ -145,10 +145,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     np_image = np.array(pil_image) / 255.0  # Normalize to [0, 1]
                     np_image = np_image.transpose(2, 0, 1)  # Convert from HWC to CHW format
                     stylized_image = torch.from_numpy(np_image).float().cuda()
+                    
+                    if stylized_image is not None and gt_image.shape != stylized_image.shape:
+                        #print(f"Resizing stylized image from {stylized_image.shape} to {gt_image.shape} for {image_name}")
+                        stylized_pil = Image.fromarray((stylized_image.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8))
+                        resolution = (gt_image.shape[2], gt_image.shape[1])  # (width, height)
+                        stylized_image = PILtoTorch(stylized_pil, resolution).cuda()
                     #print(f"Loaded stylized image from {stylized_image_path}")
                 except Exception as e:
                     print(f"Error loading stylized image: {e}")
-        
+        #print('debug', stylized_image_path)
         mask_images = []
         if masks_path:
             for path in masks_path:
