@@ -76,6 +76,63 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 if not os.path.exists(images_stylized_path):
                     print(f"Warning: Stylized images path {images_stylized_path} does not exist")
                     images_stylized_path = None
+                
+                if images_stylized_path:
+                    print("Preprocessing stylized images...")
+                    train_cameras = scene.getTrainCameras()
+                    
+                    if train_cameras:
+                        first_camera = train_cameras[0]
+                        gt_image_shape = first_camera.original_image.shape
+                        target_resolution = (gt_image_shape[2], gt_image_shape[1])  # (width, height)
+                        
+                        first_stylized_path = None
+                        for ext in ['.jpg', '.JPG']:
+                            test_path = os.path.join(images_stylized_path, f"{first_camera.image_name}{ext}")
+                            if os.path.exists(test_path):
+                                first_stylized_path = test_path
+                                break
+                        
+                        needs_resize = False
+                        if first_stylized_path:
+                            try:
+                                first_pil = Image.open(first_stylized_path)
+                                first_stylized_size = (first_pil.width, first_pil.height)
+                                needs_resize = first_stylized_size != target_resolution
+                                if needs_resize:
+                                    print(f"Stylized images need resizing from {first_stylized_size} to {target_resolution}")
+                                else:
+                                    print("Stylized images already match target resolution")
+                            except Exception as e:
+                                print(f"Error checking first stylized image: {e}")
+                        
+                        for camera in train_cameras:
+                            stylized_image_path = None
+                            for ext in ['.jpg', '.JPG']:
+                                test_path = os.path.join(images_stylized_path, f"{camera.image_name}{ext}")
+                                if os.path.exists(test_path):
+                                    stylized_image_path = test_path
+                                    break
+                            
+                            if stylized_image_path:
+                                try:
+                                    pil_image = Image.open(stylized_image_path)
+                                    
+                                    if needs_resize:
+                                        stylized_tensor = PILtoTorch(pil_image, target_resolution)
+                                    else:
+                                        np_image = np.array(pil_image) / 255.0
+                                        stylized_tensor = torch.from_numpy(np_image.transpose(2, 0, 1)).float()
+                                    
+                                    camera.stylized_image = stylized_tensor
+                                    
+                                except Exception as e:
+                                    print(f"Error preprocessing stylized image for {camera.image_name}: {e}")
+                                    camera.stylized_image = None
+                            else:
+                                camera.stylized_image = None
+                        
+                        print(f"Preprocessed stylized images for {len(train_cameras)} cameras")
             
             if "masks_path" in style_data:
                 masks_path = style_data["masks_path"]
@@ -134,27 +191,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         #print(f"Processing image: {image_name}") # frame_00004
         
         stylized_image = None
-        if images_stylized_path:
-            stylized_image_path = os.path.join(images_stylized_path, f"{image_name}.jpg")
-            if not os.path.exists(stylized_image_path):
-                stylized_image_path = os.path.join(images_stylized_path, f"{image_name}.JPG")
-            
-            if os.path.exists(stylized_image_path):
-                try:
-                    pil_image = Image.open(stylized_image_path)
-                    np_image = np.array(pil_image) / 255.0  # Normalize to [0, 1]
-                    np_image = np_image.transpose(2, 0, 1)  # Convert from HWC to CHW format
-                    stylized_image = torch.from_numpy(np_image).float().cuda()
-                    
-                    if stylized_image is not None and gt_image.shape != stylized_image.shape:
-                        #print(f"Resizing stylized image from {stylized_image.shape} to {gt_image.shape} for {image_name}")
-                        stylized_pil = Image.fromarray((stylized_image.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8))
-                        resolution = (gt_image.shape[2], gt_image.shape[1])  # (width, height)
-                        stylized_image = PILtoTorch(stylized_pil, resolution).cuda()
-                    #print(f"Loaded stylized image from {stylized_image_path}")
-                except Exception as e:
-                    print(f"Error loading stylized image: {e}")
-        #print('debug', stylized_image_path)
+        if images_stylized_path and hasattr(viewpoint_cam, 'stylized_image') and viewpoint_cam.stylized_image is not None:
+            stylized_image = viewpoint_cam.stylized_image.cuda()
+        #print('debug', image_name)
         mask_images = []
         if masks_path:
             for path in masks_path:
