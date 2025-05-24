@@ -51,8 +51,8 @@ def clip_temporal_consistency(clipsim, x, x_gt):
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate CLIP-based metrics between sets of images")
-    parser.add_argument("--imgs_dir", type=str, required=True, help="Path to directory containing the first set of images")
-    parser.add_argument("--imgs_orig_dir", type=str, required=True, help="Path to directory containing the second set of images")
+    parser.add_argument("--imgs_dir", type=str, required=True, help="Path to directory containing the stylized set of images")
+    parser.add_argument("--imgs_orig_dir", type=str, required=True, help="Path to directory containing the original set of images")
     parser.add_argument("--prompt", type=str, default="", help="Text prompt corresponding to imgs")
     parser.add_argument("--prompt_orig", type=str, default="", help="Text prompt corresponding to imgs_orig")
     parser.add_argument("--clip_model", type=str, default="ViT-L/14", help="CLIP model to use")
