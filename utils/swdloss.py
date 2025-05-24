@@ -278,7 +278,7 @@ class VGG19(torch.nn.Module):
                     mask_ = mask_[:,:,perm[:n//r]]
 
             # sample random directions
-            Ndirection = dim
+            Ndirection = dim//2
             directions = torch.randn(Ndirection, dim).to(torch.device("cuda:0")) # [Ndir, dim]
             directions = directions / torch.sqrt(torch.sum(directions**2, dim=1, keepdim=True))
 
@@ -308,10 +308,10 @@ class VGG19(torch.nn.Module):
             # L2 over sorted lists
             if l1:
                 loss += torch.mean( torch.abs(sorted_activations_example-sorted_activations_generated) ) 
-            elif False:
+            elif True:
                 weights = torch.nn.functional.softmax(SW, dim=1) # [b, num_of_dirs]
                 loss += torch.sum(weights*SW, dim=1).mean()
-            else:
+            else: # Vanilla sliced Wasserstein with random projections
                 loss += SW.mean() #torch.mean( (sorted_activations_example-sorted_activations_generated)**2 ) 
 
         return loss
