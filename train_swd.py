@@ -113,7 +113,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                                 if os.path.exists(test_path):
                                     stylized_image_path = test_path
                                     break
-                            
                             if stylized_image_path:
                                 try:
                                     pil_image = Image.open(stylized_image_path)
@@ -193,7 +192,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         stylized_image = None
         if images_stylized_path and hasattr(viewpoint_cam, 'stylized_image') and viewpoint_cam.stylized_image is not None:
             stylized_image = viewpoint_cam.stylized_image.cuda()
-        #print('debug', image_name)
         mask_images = []
         if masks_path:
             for path in masks_path:
