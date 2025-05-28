@@ -163,9 +163,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                         needs_resize = False
                         first_mask_path = None
                         for path in masks_path:
-                            test_mask_path = os.path.join(path, f"{first_camera.image_name}.jpg")
-                            if os.path.exists(test_mask_path):
-                                first_mask_path = test_mask_path
+                            for ext in ['.jpg', '.JPG']:
+                                test_mask_path = os.path.join(path, f"{first_camera.image_name}{ext}")
+                                if os.path.exists(test_mask_path):
+                                    first_mask_path = test_mask_path
+                                    break
+                            if first_mask_path:
                                 break
                         
                         if first_mask_path:
@@ -183,8 +186,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                         for camera in train_cameras:
                             camera_mask_images = []
                             for path in masks_path:
-                                mask_image_path = os.path.join(path, f"{camera.image_name}.jpg")
-                                if os.path.exists(mask_image_path):
+                                mask_image_path = None
+                                for ext in ['.jpg', '.JPG']:
+                                    test_path = os.path.join(path, f"{camera.image_name}{ext}")
+                                    if os.path.exists(test_path):
+                                        mask_image_path = test_path
+                                        break
+                                if mask_image_path:
                                     try:
                                         pil_mask = Image.open(mask_image_path)
                                         
