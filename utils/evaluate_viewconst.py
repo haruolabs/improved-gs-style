@@ -59,19 +59,25 @@ def forward_warp(image, flow):
     Returns:
         warped_image: (1, C, H, W) tensor
     """
-    _, _, h, w = image.shape
+    _, _, img_h, img_w = image.shape
+    _, _, flow_h, flow_w = flow.shape
+    
+    if img_h != flow_h or img_w != flow_w:
+        flow = F.interpolate(flow, size=(img_h, img_w), mode='bilinear', align_corners=False)
+        flow[:, 0] = flow[:, 0] * (img_w / flow_w)  # x-component
+        flow[:, 1] = flow[:, 1] * (img_h / flow_h)  # y-component
     
     y_coords, x_coords = torch.meshgrid(
-        torch.arange(h, dtype=torch.float32, device=image.device),
-        torch.arange(w, dtype=torch.float32, device=image.device),
+        torch.arange(img_h, dtype=torch.float32, device=image.device),
+        torch.arange(img_w, dtype=torch.float32, device=image.device),
         indexing='ij'
     )
     
     x_coords = x_coords + flow[0, 0]
     y_coords = y_coords + flow[0, 1]
     
-    x_coords = 2.0 * x_coords / (w - 1) - 1.0
-    y_coords = 2.0 * y_coords / (h - 1) - 1.0
+    x_coords = 2.0 * x_coords / (img_w - 1) - 1.0
+    y_coords = 2.0 * y_coords / (img_h - 1) - 1.0
     
     grid = torch.stack([x_coords, y_coords], dim=-1).unsqueeze(0)
     
