@@ -154,6 +154,65 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 else:
                     masks_path = valid_paths
                     print(f"Using {len(masks_path)} valid mask paths")
+                    
+                    if train_cameras:
+                        first_camera = train_cameras[0]
+                        gt_image_shape = first_camera.original_image.shape
+                        target_resolution = (gt_image_shape[2], gt_image_shape[1])  # (width, height)
+                        
+                        needs_resize = False
+                        first_mask_path = None
+                        for path in masks_path:
+                            for ext in ['.jpg', '.JPG']:
+                                test_mask_path = os.path.join(path, f"{first_camera.image_name}{ext}")
+                                if os.path.exists(test_mask_path):
+                                    first_mask_path = test_mask_path
+                                    break
+                            if first_mask_path:
+                                break
+                        
+                        if first_mask_path:
+                            try:
+                                first_pil_mask = Image.open(first_mask_path)
+                                first_mask_size = (first_pil_mask.width, first_pil_mask.height)
+                                needs_resize = first_mask_size != target_resolution
+                                if needs_resize:
+                                    print(f"Mask images need resizing from {first_mask_size} to {target_resolution}")
+                                else:
+                                    print("Mask images already match target resolution")
+                            except Exception as e:
+                                print(f"Error checking first mask image: {e}")
+                        
+                        for camera in train_cameras:
+                            camera_mask_images = []
+                            for path in masks_path:
+                                mask_image_path = None
+                                for ext in ['.jpg', '.JPG']:
+                                    test_path = os.path.join(path, f"{camera.image_name}{ext}")
+                                    if os.path.exists(test_path):
+                                        mask_image_path = test_path
+                                        break
+                                if mask_image_path:
+                                    try:
+                                        pil_mask = Image.open(mask_image_path)
+                                        
+                                        if needs_resize:
+                                            mask_tensor = PILtoTorch(pil_mask, target_resolution)
+                                        else:
+                                            np_mask = np.array(pil_mask) / 255.0  # Normalize to [0, 1]
+                                            if len(np_mask.shape) == 2:  # If grayscale, add channel dimension
+                                                np_mask = np_mask[np.newaxis, :, :]
+                                            elif len(np_mask.shape) == 3:  # If RGB, convert to CHW format
+                                                np_mask = np_mask.transpose(2, 0, 1)
+                                            mask_tensor = torch.from_numpy(np_mask).float()
+                                        
+                                        camera_mask_images.append(mask_tensor)
+                                    except Exception as e:
+                                        print(f"Error preprocessing mask image from {mask_image_path}: {e}")
+                            
+                            camera.mask_images = camera_mask_images
+                        
+                        print(f"Preprocessed mask images for {len(train_cameras)} cameras")
         except Exception as e:
             print(f"Error loading style.json: {e}")
 
@@ -192,26 +251,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         stylized_image = None
         if images_stylized_path and hasattr(viewpoint_cam, 'stylized_image') and viewpoint_cam.stylized_image is not None:
             stylized_image = viewpoint_cam.stylized_image.cuda()
+        
         mask_images = []
-        if masks_path:
-            for path in masks_path:
-                mask_image_path = os.path.join(path, f"{image_name}.jpg")
-                if os.path.exists(mask_image_path):
-                    try:
-                        pil_mask = Image.open(mask_image_path)
-                        np_mask = np.array(pil_mask) / 255.0  # Normalize to [0, 1]
-                        if len(np_mask.shape) == 2:  # If grayscale, add channel dimension
-                            np_mask = np_mask[np.newaxis, :, :]
-                        elif len(np_mask.shape) == 3:  # If RGB, convert to CHW format
-                            np_mask = np_mask.transpose(2, 0, 1)
-                        mask_image = torch.from_numpy(np_mask).float().cuda()
-                        mask_images.append(mask_image)
-                        #print(f"Loaded mask image from {mask_image_path}")
-                    except Exception as e:
-                        print(f"Error loading mask image from {mask_image_path}: {e}")
-            
-            if not mask_images:
-                print(f"No mask images found for {image_name} in any of the provided paths")
+        if hasattr(viewpoint_cam, 'mask_images') and viewpoint_cam.mask_images:
+            mask_images = [mask.cuda() for mask in viewpoint_cam.mask_images]
+            #print(f"Using {len(mask_images)} preprocessed mask images for {image_name}")
+        elif not mask_images and masks_path:
+            print(f"No preprocessed mask images found for {image_name}, but masks_path is defined")
             #else:
             #    print(f"Loaded {len(mask_images)} mask images for {image_name}")
         
