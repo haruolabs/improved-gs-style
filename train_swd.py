@@ -72,10 +72,25 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             
             if "images_stylized_path" in style_data:
                 images_stylized_path = style_data["images_stylized_path"]
-                print(f"Found stylized images path: {images_stylized_path}")
-                if not os.path.exists(images_stylized_path):
-                    print(f"Warning: Stylized images path {images_stylized_path} does not exist")
+                if isinstance(images_stylized_path, str):
+                    images_stylized_path = [images_stylized_path]
+                    print(f"Found single stylized images path: {images_stylized_path[0]}")
+                elif isinstance(images_stylized_path, list):
+                    print(f"Found multiple stylized images paths: {len(images_stylized_path)} paths")
+                
+                valid_paths = []
+                for path in images_stylized_path:
+                    if os.path.exists(path):
+                        valid_paths.append(path)
+                    else:
+                        print(f"Warning: Stylized images path {path} does not exist")
+                
+                if not valid_paths:
                     images_stylized_path = None
+                    print("No valid stylized images paths found")
+                else:
+                    images_stylized_path = valid_paths
+                    print(f"Using {len(images_stylized_path)} valid stylized images paths")
                 
                 if images_stylized_path:
                     print("Preprocessing stylized images...")
@@ -86,14 +101,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                         gt_image_shape = first_camera.original_image.shape
                         target_resolution = (gt_image_shape[2], gt_image_shape[1])  # (width, height)
                         
+                        needs_resize = False
                         first_stylized_path = None
-                        for ext in ['.jpg', '.JPG']:
-                            test_path = os.path.join(images_stylized_path, f"{first_camera.image_name}{ext}")
-                            if os.path.exists(test_path):
-                                first_stylized_path = test_path
+                        for path in images_stylized_path:
+                            for ext in ['.jpg', '.JPG']:
+                                test_stylized_path = os.path.join(path, f"{first_camera.image_name}{ext}")
+                                if os.path.exists(test_stylized_path):
+                                    first_stylized_path = test_stylized_path
+                                    break
+                            if first_stylized_path:
                                 break
                         
-                        needs_resize = False
                         if first_stylized_path:
                             try:
                                 first_pil = Image.open(first_stylized_path)
@@ -107,29 +125,29 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                                 print(f"Error checking first stylized image: {e}")
                         
                         for camera in train_cameras:
-                            stylized_image_path = None
-                            for ext in ['.jpg', '.JPG']:
-                                test_path = os.path.join(images_stylized_path, f"{camera.image_name}{ext}")
-                                if os.path.exists(test_path):
-                                    stylized_image_path = test_path
-                                    break
-                            if stylized_image_path:
-                                try:
-                                    pil_image = Image.open(stylized_image_path)
-                                    
-                                    if needs_resize:
-                                        stylized_tensor = PILtoTorch(pil_image, target_resolution)
-                                    else:
-                                        np_image = np.array(pil_image) / 255.0
-                                        stylized_tensor = torch.from_numpy(np_image.transpose(2, 0, 1)).float()
-                                    
-                                    camera.stylized_image = stylized_tensor
-                                    
-                                except Exception as e:
-                                    print(f"Error preprocessing stylized image for {camera.image_name}: {e}")
-                                    camera.stylized_image = None
-                            else:
-                                camera.stylized_image = None
+                            camera_stylized_images = []
+                            for path in images_stylized_path:
+                                stylized_image_path = None
+                                for ext in ['.jpg', '.JPG']:
+                                    test_path = os.path.join(path, f"{camera.image_name}{ext}")
+                                    if os.path.exists(test_path):
+                                        stylized_image_path = test_path
+                                        break
+                                if stylized_image_path:
+                                    try:
+                                        pil_image = Image.open(stylized_image_path)
+                                        
+                                        if needs_resize:
+                                            stylized_tensor = PILtoTorch(pil_image, target_resolution)
+                                        else:
+                                            np_image = np.array(pil_image) / 255.0
+                                            stylized_tensor = torch.from_numpy(np_image.transpose(2, 0, 1)).float()
+                                        
+                                        camera_stylized_images.append(stylized_tensor)
+                                    except Exception as e:
+                                        print(f"Error preprocessing stylized image from {stylized_image_path}: {e}")
+                            
+                            camera.stylized_images = camera_stylized_images
                         
                         print(f"Preprocessed stylized images for {len(train_cameras)} cameras")
             
@@ -248,9 +266,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         image_name = viewpoint_cam.image_name
         #print(f"Processing image: {image_name}") # frame_00004
         
-        stylized_image = None
-        if images_stylized_path and hasattr(viewpoint_cam, 'stylized_image') and viewpoint_cam.stylized_image is not None:
-            stylized_image = viewpoint_cam.stylized_image.cuda()
+        stylized_images = []
+        if images_stylized_path and hasattr(viewpoint_cam, 'stylized_images') and viewpoint_cam.stylized_images:
+            stylized_images = [img.cuda() for img in viewpoint_cam.stylized_images]
         
         mask_images = []
         if hasattr(viewpoint_cam, 'mask_images') and viewpoint_cam.mask_images:
@@ -267,7 +285,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         Ll1 = l1_loss(image, gt_image) # torch.Size([3, 1036, 1600])
         #loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         # Content loss
-        content_loss = vgg.content_loss(image.unsqueeze(0), stylized_image.unsqueeze(0))
+        content_loss = vgg.content_loss(image.unsqueeze(0), stylized_images[0].unsqueeze(0)) if stylized_images else 0
 
         #loss = vgg.slicing_loss(image.unsqueeze(0), gt_image.unsqueeze(0)) # Vanilla SWD loss w/o masks
         #ref_image = stylized_image*mask_image + gt_image*(1-mask_image) # Region-based: only the masked area will be style-transferred
@@ -281,7 +299,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             left = random.randint(0, W - crop_w)
             image = image[:, top:top+crop_h, left:left+crop_w]
             gt_image = gt_image[:, top:top+crop_h, left:left+crop_w]
-            stylized_image = stylized_image[:, top:top+crop_h, left:left+crop_w]
+            stylized_images = [img[:, top:top+crop_h, left:left+crop_w] for img in stylized_images]
             mask_images = [m[:, top:top+crop_h, left:left+crop_w] for m in mask_images]
         
         loss = 0
@@ -293,15 +311,26 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 else:
                     combined_mask = torch.maximum(combined_mask, mask)
             
-            if stylized_image is not None and combined_mask is not None:
-                #ref_image = stylized_image * combined_mask + gt_image * (1 - combined_mask)  # Region-based: only the masked area will be style-transferred, outer region will be preserved
-                ref_image = stylized_image
-                #loss = vgg.ebsw_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=combined_mask.unsqueeze(0))  # [b, c, h, w]
+            comp_image = None
+            if stylized_images and len(stylized_images) == len(mask_images):
+                comp_image = gt_image.clone()
+                for i, (mask, stylized_img) in enumerate(zip(mask_images, stylized_images)):
+                    comp_image = comp_image * (1 - mask) + stylized_img * mask
+            
+            if stylized_images and combined_mask is not None:
+                ref_image = stylized_images[0]
                 loss = vgg.region_based_swd_loss(image.unsqueeze(0), ref_image.unsqueeze(0), mask=mask_images) # [b, c, h, w]
+            elif stylized_images:
+                ref_image = stylized_images[0]
+                loss = vgg.slicing_loss(image.unsqueeze(0), ref_image.unsqueeze(0))
             else:
-                loss = vgg.slicing_loss(image.unsqueeze(0), stylized_image.unsqueeze(0))
+                loss = 0
         else:
-            loss = vgg.slicing_loss(image.unsqueeze(0), stylized_image.unsqueeze(0))
+            if stylized_images:
+                ref_image = stylized_images[0]
+                loss = vgg.slicing_loss(image.unsqueeze(0), ref_image.unsqueeze(0))
+            else:
+                loss = 0
         
         # regularization
         lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
