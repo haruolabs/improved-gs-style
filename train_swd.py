@@ -265,11 +265,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             initial_image = initial_render_pkg["render"]
             initial_gt_image = initial_cam.original_image.cuda()
             
+            initial_stylized_images = []
+            if images_stylized_path and hasattr(initial_cam, 'stylized_images') and initial_cam.stylized_images:
+                initial_stylized_images = [img.cuda() for img in initial_cam.stylized_images]
+            
             initial_gram_loss = vgg.gram_loss(initial_image.unsqueeze(0), initial_gt_image.unsqueeze(0))
             
-            gram_loss_writer.writerow([0, initial_gram_loss.item()])
+            if initial_stylized_images:
+                initial_ref_image = initial_stylized_images[0]
+                initial_slicing_loss = vgg.slicing_loss(initial_image.unsqueeze(0), initial_ref_image.unsqueeze(0))
+            else:
+                initial_slicing_loss = 0
+            
+            gram_loss_writer.writerow([0, initial_gram_loss.item(), initial_slicing_loss.item() if initial_slicing_loss != 0 else 0])
             csv_file.flush()
-            print(f"Initial gram loss recorded: {initial_gram_loss.item()}")
+            print(f"Initial losses recorded - gram: {initial_gram_loss.item()}, slicing: {initial_slicing_loss.item() if initial_slicing_loss != 0 else 0}")
 
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
@@ -390,9 +400,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 
                 current_gram_loss = vgg.gram_loss(image.unsqueeze(0), target_image)
                 
-                gram_loss_writer.writerow([iteration, current_gram_loss.item()])
+                current_slicing_loss = 0
+                if stylized_images:
+                    ref_image = stylized_images[0]
+                    current_slicing_loss = vgg.slicing_loss(image.unsqueeze(0), ref_image.unsqueeze(0))
+                
+                gram_loss_writer.writerow([iteration, current_gram_loss.item(), current_slicing_loss.item() if current_slicing_loss != 0 else 0])
                 csv_file.flush()
-                print(f"Gram loss at iteration {iteration}: {current_gram_loss.item()}")
+                print(f"Losses at iteration {iteration} - gram: {current_gram_loss.item()}, slicing: {current_slicing_loss.item() if current_slicing_loss != 0 else 0}")
 
 
             if iteration % 10 == 0:
