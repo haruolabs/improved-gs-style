@@ -211,7 +211,6 @@ class VGG19(torch.nn.Module):
     def region_based_swd_loss(self, image_generated, image_example, l1=False, mask=None, sample_pixels=False): # mask can be a single mask [b, 1, H, W] or a list of masks
         """
         Region-based Sliced Wasserstein Distance loss that can handle multiple masks.
-        
         Args:
             image_generated: Generated image tensor [b, c, h, w]
             image_example: Example/target image tensor [b, c, h, w]
@@ -287,7 +286,8 @@ class VGG19(torch.nn.Module):
                 max_val = torch.max( torch.cat( (activations_example, activations_generated), dim=0 ) ).item()
                 directions = torch.cat((directions, torch.ones(Ndirection, 1).to(torch.device("cuda:0"))), dim=1) # [ndir, dim+1]
                 for i, m in enumerate(mask):
-                    m = m.view(b, 1, -1)
+                    m = m.reshape(b, 1, -1)
+                    #m = m.view(b, 1, -1)
                     #print('DEBUG l=',l, mask_.shape, m.shape) #DEBUG torch.Size([1, 1, 733572]) torch.Size([1, 738, 994]) 
                     # DEBUG torch.Size([1, 1, 183393]) torch.Size([1, 1, 733572]) [17/05 02:58:18]
                     mask_ += m*max_val*(i+1)

@@ -26,13 +26,15 @@ from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from PIL import Image
 import numpy as np
+import csv
+from datetime import datetime
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, extra_iterations=5000, style_json_name=None):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, extra_iterations=5000, style_json_name=None, record_gramloss=False):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -242,6 +244,43 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     vgg = VGG19().to(torch.device("cuda"))
     vgg.load_state_dict(torch.load("models/vgg19.pth")) # Load VGG19 weights
 
+    # Initialize gram loss recording if requested
+    gram_loss_csv_file = None
+    gram_loss_writer = None
+    csv_file = None
+    if record_gramloss:
+        os.makedirs("temp", exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        gram_loss_csv_file = f"temp/gramloss_{timestamp}.csv"
+        
+        # Initialize CSV writer
+        csv_file = open(gram_loss_csv_file, 'w', newline='')
+        gram_loss_writer = csv.writer(csv_file)
+
+    if record_gramloss and gram_loss_writer:
+        initial_cam = scene.getTrainCameras()[0]
+        with torch.no_grad():
+            initial_render_pkg = render(initial_cam, gaussians, pipe, background)
+            initial_image = initial_render_pkg["render"]
+            initial_gt_image = initial_cam.original_image.cuda()
+            
+            initial_stylized_images = []
+            if images_stylized_path and hasattr(initial_cam, 'stylized_images') and initial_cam.stylized_images:
+                initial_stylized_images = [img.cuda() for img in initial_cam.stylized_images]
+            
+            initial_gram_loss = vgg.gram_loss(initial_image.unsqueeze(0), initial_gt_image.unsqueeze(0))
+            
+            if initial_stylized_images:
+                initial_ref_image = initial_stylized_images[0]
+                initial_slicing_loss = vgg.slicing_loss(initial_image.unsqueeze(0), initial_ref_image.unsqueeze(0))
+            else:
+                initial_slicing_loss = 0
+            
+            gram_loss_writer.writerow([0, initial_gram_loss.item(), initial_slicing_loss.item() if initial_slicing_loss != 0 else 0])
+            csv_file.flush()
+            print(f"Initial losses recorded - gram: {initial_gram_loss.item()}, slicing: {initial_slicing_loss.item() if initial_slicing_loss != 0 else 0}")
+
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):        
@@ -320,6 +359,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if stylized_images and combined_mask is not None:
                 ref_image = stylized_images[0]
                 loss = vgg.region_based_swd_loss(image.unsqueeze(0), comp_image.unsqueeze(0), mask=mask_images) # [b, c, h, w]
+                #loss = vgg.slicing_loss(image.unsqueeze(0), ref_image.unsqueeze(0))
             elif stylized_images:
                 ref_image = stylized_images[0]
                 loss = vgg.slicing_loss(image.unsqueeze(0), ref_image.unsqueeze(0))
@@ -355,6 +395,20 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             ema_dist_for_log = 0.4 * dist_loss.item() + 0.6 * ema_dist_for_log
             ema_normal_for_log = 0.4 * normal_loss.item() + 0.6 * ema_normal_for_log
+
+            if record_gramloss and gram_loss_writer and iteration % 50 == 0:
+                target_image = comp_image.unsqueeze(0) if 'comp_image' in locals() and comp_image is not None else gt_image.unsqueeze(0)
+                
+                current_gram_loss = vgg.gram_loss(image.unsqueeze(0), target_image)
+                
+                current_slicing_loss = 0
+                if stylized_images:
+                    ref_image = stylized_images[0]
+                    current_slicing_loss = vgg.slicing_loss(image.unsqueeze(0), ref_image.unsqueeze(0))
+                
+                gram_loss_writer.writerow([iteration, current_gram_loss.item(), current_slicing_loss.item() if current_slicing_loss != 0 else 0])
+                csv_file.flush()
+                print(f"Losses at iteration {iteration} - gram: {current_gram_loss.item()}, slicing: {current_slicing_loss.item() if current_slicing_loss != 0 else 0}")
 
 
             if iteration % 10 == 0:
@@ -425,6 +479,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 except Exception as e:
                     # raise e
                     network_gui.conn = None
+
+    if record_gramloss and csv_file is not None:
+        csv_file.close()
+        print(f"Gram loss recording saved to: {gram_loss_csv_file}")
 
 def prepare_output_and_logger(args):    
     if not args.model_path:
@@ -524,6 +582,7 @@ if __name__ == "__main__":
     parser.add_argument("--start_checkpoint", type=str, default = None)
     parser.add_argument("--style_json", type=str, default=None, help="Name of stylization JSON config file")
     parser.add_argument("--extra_iterations", type=int, default = 5000)
+    parser.add_argument("--record_gramloss", action="store_true", help="Record gram loss values during training")
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     
@@ -535,7 +594,7 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.extra_iterations, args.style_json)
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.extra_iterations, args.style_json, args.record_gramloss)
 
     # All done
     print("\nTraining complete.")
