@@ -359,6 +359,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if stylized_images and combined_mask is not None:
                 ref_image = stylized_images[0]
                 loss = vgg.region_based_swd_loss(image.unsqueeze(0), comp_image.unsqueeze(0), mask=mask_images) # [b, c, h, w]
+                #loss = vgg.slicing_loss(image.unsqueeze(0), ref_image.unsqueeze(0))
             elif stylized_images:
                 ref_image = stylized_images[0]
                 loss = vgg.slicing_loss(image.unsqueeze(0), ref_image.unsqueeze(0))
