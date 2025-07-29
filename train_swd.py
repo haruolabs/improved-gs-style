@@ -34,6 +34,12 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
+try:
+    import torch.profiler
+    TORCH_PROFILER_FOUND = True
+except ImportError:
+    TORCH_PROFILER_FOUND = False
+
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, extra_iterations=5000, style_json_name=None, record_gramloss=False, record_flops=False):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
@@ -385,20 +391,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 
                 # Record FLOPS and runtime if requested
                 if record_flops:
-                    import torch.profiler
-                    with torch.profiler.profile(with_flops=True) as prof:
+                    if not TORCH_PROFILER_FOUND:
+                        print("Warning: torch.profiler not available, skipping FLOPS recording")
                         loss = vgg.region_based_swd_loss(image.unsqueeze(0), comp_image.unsqueeze(0), mask=mask_images)
-                    
-                    key_averages = prof.key_averages()
-                    flops = sum([item.flops for item in key_averages])
-                    runtime_ms = sum([item.cpu_time_total for item in key_averages]) / 1000
-                    
-                    flops_data.append((iteration, flops, runtime_ms))
-                    
-                    # Write to CSV every 50 iterations
-                    if iteration % 50 == 0 and flops_writer:
-                        flops_writer.writerow([iteration, flops, runtime_ms])
-                        flops_csv_file_handle.flush()
+                    else:
+                        with torch.profiler.profile(with_flops=True) as prof:
+                            loss = vgg.region_based_swd_loss(image.unsqueeze(0), comp_image.unsqueeze(0), mask=mask_images)
+                        
+                        key_averages = prof.key_averages()
+                        flops = sum([item.flops for item in key_averages])
+                        runtime_ms = sum([item.cpu_time_total for item in key_averages]) / 1000
+                        
+                        flops_data.append((iteration, flops, runtime_ms))
+                        
+                        # Write to CSV every 50 iterations
+                        if iteration % 50 == 0 and flops_writer:
+                            flops_writer.writerow([iteration, flops, runtime_ms])
+                            flops_csv_file_handle.flush()
                 else:
                     loss = vgg.region_based_swd_loss(image.unsqueeze(0), comp_image.unsqueeze(0), mask=mask_images)
             elif stylized_images:
