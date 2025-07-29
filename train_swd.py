@@ -34,7 +34,7 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, extra_iterations=5000, style_json_name=None, record_gramloss=False):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, extra_iterations=5000, style_json_name=None, record_gramloss=False, record_flops=False):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -281,6 +281,26 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             csv_file.flush()
             print(f"Initial losses recorded - gram: {initial_gram_loss.item()}, slicing: {initial_slicing_loss.item() if initial_slicing_loss != 0 else 0}")
 
+    # Initialize FLOPS recording if requested
+    flops_csv_file = None
+    flops_writer = None
+    flops_csv_file_handle = None
+    flops_data = []
+    
+    if record_flops:
+        os.makedirs("temp", exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        flops_csv_file = f"temp/flops_{timestamp}.csv"
+        
+        flops_csv_file_handle = open(flops_csv_file, 'w', newline='')
+        flops_writer = csv.writer(flops_csv_file_handle)
+        flops_writer.writerow(['iteration', 'flops', 'runtime_ms'])
+        flops_csv_file_handle.flush()
+        print(f"FLOPS recording initialized: {flops_csv_file}")
+
+    if_condition_printed = False
+
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):        
@@ -357,9 +377,30 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     comp_image = comp_image * (1 - mask) + stylized_img * mask
             
             if stylized_images and combined_mask is not None:
+                if not if_condition_printed:
+                    print("INFO: Style transfer with combined mask is active (stylized_images and combined_mask both available)")
+                    if_condition_printed = True
+                    
                 ref_image = stylized_images[0]
-                loss = vgg.region_based_swd_loss(image.unsqueeze(0), comp_image.unsqueeze(0), mask=mask_images) # [b, c, h, w]
-                #loss = vgg.slicing_loss(image.unsqueeze(0), ref_image.unsqueeze(0))
+                
+                # Record FLOPS and runtime if requested
+                if record_flops:
+                    import torch.profiler
+                    with torch.profiler.profile(with_flops=True) as prof:
+                        loss = vgg.region_based_swd_loss(image.unsqueeze(0), comp_image.unsqueeze(0), mask=mask_images)
+                    
+                    key_averages = prof.key_averages()
+                    flops = sum([item.flops for item in key_averages])
+                    runtime_ms = sum([item.cpu_time_total for item in key_averages]) / 1000
+                    
+                    flops_data.append((iteration, flops, runtime_ms))
+                    
+                    # Write to CSV every 50 iterations
+                    if iteration % 50 == 0 and flops_writer:
+                        flops_writer.writerow([iteration, flops, runtime_ms])
+                        flops_csv_file_handle.flush()
+                else:
+                    loss = vgg.region_based_swd_loss(image.unsqueeze(0), comp_image.unsqueeze(0), mask=mask_images)
             elif stylized_images:
                 ref_image = stylized_images[0]
                 loss = vgg.slicing_loss(image.unsqueeze(0), ref_image.unsqueeze(0))
@@ -484,6 +525,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         csv_file.close()
         print(f"Gram loss recording saved to: {gram_loss_csv_file}")
 
+    if record_flops and flops_csv_file_handle is not None:
+        if flops_data:
+            valid_flops = [data[1] for data in flops_data if data[1] is not None and data[1] > 0]
+            avg_flops = sum(valid_flops) / len(valid_flops) if valid_flops else 0
+            avg_runtime = sum(data[2] for data in flops_data) / len(flops_data)
+            
+            flops_writer.writerow(['AVERAGE', avg_flops, avg_runtime])
+            print(f"FLOPS Recording Summary:")
+            print(f"  Average FLOPS: {avg_flops:.2e}")
+            print(f"  Average Runtime: {avg_runtime:.2f} ms")
+            print(f"  Total measurements: {len(flops_data)}")
+        
+        flops_csv_file_handle.close()
+        print(f"FLOPS recording saved to: {flops_csv_file}")
+
 def prepare_output_and_logger(args):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
@@ -583,6 +639,7 @@ if __name__ == "__main__":
     parser.add_argument("--style_json", type=str, default=None, help="Name of stylization JSON config file")
     parser.add_argument("--extra_iterations", type=int, default = 5000)
     parser.add_argument("--record_gramloss", action="store_true", help="Record gram loss values during training")
+    parser.add_argument("--record_flops", action="store_true", help="Record FLOPS and runtime for region_based_swd_loss function")
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     
@@ -594,7 +651,7 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.extra_iterations, args.style_json, args.record_gramloss)
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.extra_iterations, args.style_json, args.record_gramloss, args.record_flops)
 
     # All done
     print("\nTraining complete.")
