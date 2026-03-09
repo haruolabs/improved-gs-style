@@ -1,6 +1,9 @@
-# The official repository for the paper "Improved 3D Scene Stylization via Text-Guided Generative Image Editing with Region-Based Control" (Pacific Graphics 2025))
+# Improved 3D Scene Stylization via Text-Guided Generative Image Editing with Region-Based Control
+The official repository for the paper "Improved 3D Scene Stylization via Text-Guided Generative Image Editing with Region-Based Control" (Pacific Graphics 2025)
 
-## New installation guide
+[Project page](https://haruolabs.github.io/improved-gs-style-page/) | [Paper](https://arxiv.org/pdf/2509.05285)
+
+## Installation guide
 (Coming soon...)
 
 ## 2D Gaussian Splatting for Geometrically Accurate Radiance Fields
