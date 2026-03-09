@@ -1,4 +1,21 @@
-# 2D Gaussian Splatting for Geometrically Accurate Radiance Fields
+# The official repository for the paper "Improved 3D Scene Stylization via Text-Guided Generative Image Editing with Region-Based Control" (Pacific Graphics 2025))
+
+## New installation guide
+(Coming soon...)
+
+## 2D Gaussian Splatting for Geometrically Accurate Radiance Fields
+Our work is based on the official implementation provided by "2D Gaussian Splatting for Geometrically Accurate Radiance Fields". We greatly appreciate their work!
+
+```bibtex
+@inproceedings{Huang2DGS2024,
+    title={2D Gaussian Splatting for Geometrically Accurate Radiance Fields},
+    author={Huang, Binbin and Yu, Zehao and Chen, Anpei and Geiger, Andreas and Gao, Shenghua},
+    publisher = {Association for Computing Machinery},
+    booktitle = {SIGGRAPH 2024 Conference Papers},
+    year      = {2024},
+    doi       = {10.1145/3641519.3657428}
+}
+```
 
 [Project page](https://surfsplatting.github.io/) | [Paper](https://arxiv.org/pdf/2403.17888) | [Video](https://www.youtube.com/watch?v=oaHCtB6yiKU) | [Surfel Rasterizer (CUDA)](https://github.com/hbb1/diff-surfel-rasterization) | [Surfel Rasterizer (Python)](https://colab.research.google.com/drive/1qoclD7HJ3-o0O1R8cvV3PxLhoDCMsH8W?usp=sharing) | [DTU+COLMAP (3.5GB)](https://drive.google.com/drive/folders/1SJFgt8qhQomHX55Q4xSvYE2C6-8tFll9) | [SIBR Viewer Pre-built for Windows](https://drive.google.com/file/d/1DRFrtFUfz27QvQKOWbYXbRS2o2eSgaUT/view?usp=sharing) | [Web Viewer](https://github.com/mkkellogg/GaussianSplats3D) <br>
 
@@ -183,12 +200,14 @@ This project is built upon [3DGS](https://github.com/graphdeco-inria/gaussian-sp
 ## Citation
 If you find our code or paper helps, please consider citing:
 ```bibtex
-@inproceedings{Huang2DGS2024,
-    title={2D Gaussian Splatting for Geometrically Accurate Radiance Fields},
-    author={Huang, Binbin and Yu, Zehao and Chen, Anpei and Geiger, Andreas and Gao, Shenghua},
-    publisher = {Association for Computing Machinery},
-    booktitle = {SIGGRAPH 2024 Conference Papers},
-    year      = {2024},
-    doi       = {10.1145/3641519.3657428}
-}
+@inproceedings{10.2312:pg.20251277,
+        booktitle = {Pacific Graphics Conference Papers, Posters, and Demos},
+        editor = {Christie, Marc and Han, Ping-Hsuan and Lin, Shih-Syun and Pietroni, Nico and Schneider, Teseo and Tsai, Hsin-Ruey and Wang, Yu-Shuen and Zhang, Eugene},
+        title = {{Improved 3D Scene Stylization via Text-Guided Generative Image Editing with Region-Based Control}},
+        author = {Fujiwara, Haruo and Mukuta, Yusuke and Harada, Tatsuya},
+        year = {2025},
+        publisher = {The Eurographics Association},
+        ISBN = {978-3-03868-295-0},
+        DOI = {10.2312/pg.20251277}
+      }
 ```
